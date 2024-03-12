@@ -3,6 +3,10 @@ use std::{
     net::{self, TcpStream},
 };
 
+use crate::http2::Header;
+
+mod http2;
+
 pub struct HTTP2 {
     tcp_stream: net::TcpStream,
 }
@@ -15,12 +19,6 @@ impl HTTP2 {
     }
 
     pub fn recv(&mut self) {
-        // let buf_reader = BufReader::new(self.tcp_stream);
-        // let data: Vec<_> = buf_reader.lines().map(|result| result.unwrap()).collect();
-        // for line in data {
-        //     println!("{}", line);
-        // }
-
         let mut preface_buf: [u8; 24] = Default::default();
         let preface_bytes = self.tcp_stream.read(preface_buf.as_mut_slice()).unwrap();
 
@@ -42,5 +40,19 @@ impl HTTP2 {
             return;
         }
         println!("HTTP2 connection started");
+
+        let mut frame_buf: [u8; 9] = Default::default();
+        self.tcp_stream.read(&mut frame_buf).unwrap();
+
+        let frame_header = Header::new(&frame_buf);
+        let frame_header = match frame_header {
+            Err(e) => {
+                println!("Invalid frame header: {}", frame_header.err().unwrap());
+                return;
+            }
+            Ok(v) => v,
+        };
+
+        println!("Got Header: {:#?}", frame_header);
     }
 }
