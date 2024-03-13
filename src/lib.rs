@@ -1,58 +1,91 @@
+use core::panic;
 use std::{
-    io::Read,
+    io::{BufReader, Read},
     net::{self, TcpStream},
+    str,
 };
 
-use crate::http2::Header;
+use crate::h2::{Frame, Header};
 
-mod http2;
+mod h2;
 
-pub struct HTTP2 {
+pub struct H2 {
     tcp_stream: net::TcpStream,
 }
 
-impl HTTP2 {
+impl H2 {
     const H2PREFACE: &'static str = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
 
-    pub fn new(tcp_stream: TcpStream) -> HTTP2 {
-        return HTTP2 { tcp_stream };
+    pub fn new(tcp_stream: TcpStream) -> H2 {
+        return H2 { tcp_stream };
     }
 
-    pub fn recv(&mut self) {
+    pub fn start(&mut self) {
+        let mut tcp_reader = BufReader::new(&mut self.tcp_stream);
+        if let Err(err) = H2::establish_h2_conn(&mut tcp_reader) {
+            println!("Error: {}. Abort!", err);
+            return;
+        }
+        println!("HTTP2 Connection Established!");
+
+        loop {
+            let frame = H2::parse_frame(&mut tcp_reader);
+            let frame = match frame {
+                Ok(v) => v,
+                Err(e) => {
+                    println!("Error parsing frame: {}", e);
+                    return;
+                }
+            };
+
+            println!("Frame is: {:#?}", frame);
+        }
+    }
+
+    fn establish_h2_conn(reader: &mut impl Read) -> Result<(), String> {
         let mut preface_buf: [u8; 24] = Default::default();
-        let preface_bytes = self.tcp_stream.read(preface_buf.as_mut_slice()).unwrap();
+        let preface_bytes = reader.read(preface_buf.as_mut_slice()).unwrap();
 
         if preface_bytes != 24 {
-            println!("Not a http2 connection, aborted!");
-            return;
+            return Err(format!("Not an http2 connection, aborted!"));
         }
 
         let preface_str = match std::str::from_utf8(&preface_buf) {
             Ok(v) => v,
             Err(_) => {
-                println!("Invalid preface: {}", preface_bytes);
-                return;
+                return Err(format!("Invalid preface: {}", preface_bytes));
             }
         };
 
-        if preface_str != HTTP2::H2PREFACE {
-            println!("Not a valid http2 preface. Aborted!");
-            return;
+        if preface_str != H2::H2PREFACE {
+            return Err(format!("Not a valid http2 preface. Aborted!"));
         }
-        println!("HTTP2 connection started");
 
-        let mut frame_buf: [u8; 9] = Default::default();
-        self.tcp_stream.read(&mut frame_buf).unwrap();
+        Ok(())
+    }
 
-        let frame_header = Header::new(&frame_buf);
-        let frame_header = match frame_header {
+    fn parse_frame<'a>(reader: &mut impl Read) -> Result<Frame, String> {
+        let mut header_buf: [u8; 9] = Default::default();
+        let mut bytes_read = reader.read(&mut header_buf).unwrap();
+        if bytes_read != 9 {
+            return Err(String::from("EOF"));
+        }
+
+        let header = Header::new(&header_buf);
+        let header = match header {
             Err(e) => {
-                println!("Invalid frame header: {}", frame_header.err().unwrap());
-                return;
+                return Err(format!("Invalid frame header: {}", e));
             }
             Ok(v) => v,
         };
 
-        println!("Got Header: {:#?}", frame_header);
+        let mut body: Vec<u8> = Vec::new();
+        body.resize(header.length() as usize, 0u8);
+        bytes_read = reader.read(&mut body).unwrap();
+        if bytes_read != body.len() {
+            return Err(String::from("EOF"));
+        }
+
+        Ok(Frame::new(header, body))
     }
 }

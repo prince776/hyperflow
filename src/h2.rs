@@ -4,6 +4,26 @@ use std::{
     mem::{self, discriminant},
 };
 
+#[derive(Debug)]
+pub struct Frame {
+    header: Header,
+    body: Vec<u8>,
+}
+
+impl Frame {
+    pub fn new(header: Header, body: Vec<u8>) -> Frame {
+        Frame { header, body }
+    }
+}
+
+#[derive(Debug)]
+pub struct Header {
+    length: u32,
+    frame_type: FrameType,
+    flag_mask: HeaderFlagMask,
+    stream_identifier: u32,
+}
+
 #[derive(Clone, Debug)]
 enum FrameType {
     Data,
@@ -62,15 +82,6 @@ impl HeaderFlagMask {
         self.0 &= !(flag as u8);
     }
 }
-
-#[derive(Debug)]
-pub struct Header {
-    length: u32,
-    frame_type: FrameType,
-    flag_mask: HeaderFlagMask,
-    stream_identifier: u32,
-}
-
 impl Header {
     pub fn new<'a>(buf: &[u8]) -> Result<Header, &'a str> {
         let length = u32::from_be_bytes([0x00, buf[0], buf[1], buf[2]]);
