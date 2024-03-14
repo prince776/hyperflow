@@ -25,7 +25,7 @@ pub struct Header {
 }
 
 #[derive(Clone, Debug)]
-enum FrameType {
+pub enum FrameType {
     Data,
     Headers,
     Priority,

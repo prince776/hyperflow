@@ -7,11 +7,13 @@ use std::{
 };
 
 use hpack::{Decoder, Encoder};
+use http::{Request, Response};
 use stream::{Stream, StreamData};
 
 use crate::h2::{Frame, Header};
 
 mod h2;
+pub mod http;
 mod stream;
 
 pub struct H2 {
@@ -31,7 +33,10 @@ impl H2 {
         }
     }
 
-    pub fn start(&mut self) {
+    pub fn start<ReqHandler>(&mut self, req_handler: ReqHandler)
+    where
+        ReqHandler: Fn(Request) -> Response,
+    {
         let mut tcp_reader = BufReader::new(&mut self.tcp_stream);
         if let Err(err) = H2::establish_h2_conn(&mut tcp_reader) {
             println!("Error: {}. Abort!", err);
@@ -62,7 +67,12 @@ impl H2 {
             }
 
             let stream = self.streams.remove(&stream_id).unwrap();
-            let stream = stream.on_frame(&mut decoder, frame);
+            let mut stream = stream.on_frame(&mut decoder, frame);
+
+            if let Some(req) = stream.curr_request() {
+                req_handler(req);
+            }
+
             self.streams.insert(stream_id, stream);
         }
     }
