@@ -1,23 +1,34 @@
 use core::panic;
 use std::{
+    collections::HashMap,
     io::{BufReader, Read},
     net::{self, TcpStream},
     str,
 };
 
+use hpack::{Decoder, Encoder};
+use stream::{Stream, StreamData};
+
 use crate::h2::{Frame, Header};
 
 mod h2;
+mod stream;
 
 pub struct H2 {
     tcp_stream: net::TcpStream,
+    streams: HashMap<u32, Stream>,
 }
 
 impl H2 {
     const H2PREFACE: &'static str = "PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n";
+    const CONN_STREAM_ID: u32 = 0;
 
     pub fn new(tcp_stream: TcpStream) -> H2 {
-        return H2 { tcp_stream };
+        let streams: HashMap<u32, Stream> = HashMap::new();
+        H2 {
+            tcp_stream,
+            streams,
+        }
     }
 
     pub fn start(&mut self) {
@@ -28,6 +39,8 @@ impl H2 {
         }
         println!("HTTP2 Connection Established!");
 
+        let encoder = Encoder::new();
+        let mut decoder = Decoder::new();
         loop {
             let frame = H2::parse_frame(&mut tcp_reader);
             let frame = match frame {
@@ -38,7 +51,19 @@ impl H2 {
                 }
             };
 
-            println!("Frame is: {:#?}", frame);
+            let stream_id = frame.header.stream_identifier();
+            if stream_id == H2::CONN_STREAM_ID {
+                println!("Not dealing with stream id 0 frames");
+                continue;
+            }
+
+            if !self.streams.contains_key(&stream_id) {
+                self.streams.insert(stream_id, Stream::new(stream_id));
+            }
+
+            let stream = self.streams.remove(&stream_id).unwrap();
+            let stream = stream.on_frame(&mut decoder, frame);
+            self.streams.insert(stream_id, stream);
         }
     }
 

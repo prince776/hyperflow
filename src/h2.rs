@@ -6,8 +6,8 @@ use std::{
 
 #[derive(Debug)]
 pub struct Frame {
-    header: Header,
-    body: Vec<u8>,
+    pub header: Header,
+    pub body: Vec<u8>,
 }
 
 impl Frame {
@@ -66,10 +66,10 @@ pub enum HeaderFlag {
 }
 
 #[derive(Clone, Debug)]
-struct HeaderFlagMask(u8);
+pub struct HeaderFlagMask(u8);
 
 impl HeaderFlagMask {
-    fn check(&self, flag: HeaderFlag) -> bool {
+    pub fn check(&self, flag: HeaderFlag) -> bool {
         let masked = self.0 & (flag as u8);
         return masked > 0;
     }
