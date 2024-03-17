@@ -11,7 +11,13 @@ fn main() {
         let stream = stream.unwrap();
         let mut h2 = H2::new(stream);
         h2.start(|req| {
-            println!("Handling request: {:#?}", req);
+            println!(
+                "Handling request: headers: {:#?}, url: {}, method: {:#?}, body len: {}",
+                req.headers,
+                req.url,
+                req.method,
+                req.body.len()
+            );
             return Response {
                 status: 200,
                 headers: Vec::new(),

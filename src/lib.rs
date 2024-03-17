@@ -69,8 +69,11 @@ impl H2 {
             let stream = self.streams.remove(&stream_id).unwrap();
             let mut stream = stream.on_frame(&mut decoder, frame);
 
-            if let Some(req) = stream.curr_request() {
-                req_handler(req);
+            if stream.should_handle_request() {
+                if let Some(req) = stream.curr_request() {
+                    req_handler(req);
+                    stream.set_request_handled();
+                }
             }
 
             self.streams.insert(stream_id, stream);

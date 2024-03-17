@@ -20,7 +20,7 @@ pub struct Request {
     pub url: String,
     pub method: Method,
     pub headers: Headers,
-    pub body: String,
+    pub body: Vec<u8>,
 }
 
 impl Request {
@@ -29,7 +29,7 @@ impl Request {
             url: String::new(),
             method: Method::GET,
             headers: Vec::new(),
-            body: String::new(),
+            body: Vec::new(),
         }
     }
 }
