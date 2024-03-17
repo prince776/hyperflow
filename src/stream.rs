@@ -8,6 +8,7 @@ use crate::{
 pub struct StreamData {
     id: u32,
     curr_request: Option<Request>,
+    body_buf: Vec<u8>,
     should_handle_request: bool,
 }
 
@@ -71,6 +72,7 @@ impl Stream {
             id,
             curr_request: None,
             should_handle_request: false,
+            body_buf: Vec::new(),
         })
     }
     pub fn on_frame(self, decoder: &mut Decoder, frame: Frame) -> Stream {
@@ -118,10 +120,9 @@ impl Stream {
         if let Some(curr_req) = data.curr_request {
             req = curr_req;
         } else {
-            req = Request::new();
+            req = Request::empty();
         }
-        req.headers = headers;
-
+        req = Request::from_h2_headers(headers).expect("Invalid h2 headers");
         data.curr_request = Some(req);
 
         Stream::Open(data)
@@ -136,16 +137,18 @@ impl Stream {
             }
         }
 
+        for b in frame.body {
+            data.body_buf.push(b);
+        }
+
         if frame.header.flag_mask().check(HeaderFlag::EndSream) {
             data.should_handle_request = true;
+            let mut curr_req = data.curr_request.expect("Current request should not be empty while receiving data frame. Header should've been given");
+            curr_req.set_body(data.body_buf);
+            data.body_buf = Vec::new();
+            data.curr_request = Some(curr_req);
         }
 
-        let mut curr_req = data.curr_request.expect("Current request should not be empty while receiving data frame. Header should've been given");
-        for b in frame.body {
-            curr_req.body.push(b);
-        }
-
-        data.curr_request = Some(curr_req);
         Stream::Open(data)
     }
 }

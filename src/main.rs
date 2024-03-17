@@ -12,11 +12,12 @@ fn main() {
         let mut h2 = H2::new(stream);
         h2.start(|req| {
             println!(
-                "Handling request: headers: {:#?}, url: {}, method: {:#?}, body len: {}",
+                "Handling request: headers: {:#?}, url: {:#?} ({}), method: {:#?}, body len: {}",
                 req.headers,
                 req.url,
+                req.url,
                 req.method,
-                req.body.len()
+                req.body().len(),
             );
             return Response {
                 status: 200,
