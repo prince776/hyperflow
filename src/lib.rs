@@ -1,11 +1,13 @@
 use core::panic;
 use std::{
+    borrow::{Borrow, BorrowMut},
     collections::HashMap,
-    io::{BufReader, Read},
+    io::{BufReader, BufWriter, Read, Write},
     net::{self, TcpStream},
     str,
 };
 
+use h2::HeaderFlagMask;
 use hpack::{Decoder, Encoder};
 use http::{Request, Response};
 use stream::{Stream, StreamData};
@@ -37,17 +39,19 @@ impl H2 {
     where
         ReqHandler: Fn(Request) -> Response,
     {
-        let mut tcp_reader = BufReader::new(&mut self.tcp_stream);
-        if let Err(err) = H2::establish_h2_conn(&mut tcp_reader) {
+        // TODO: See if we can still use buffered reader on this when needing to write to it.
+        // let mut tcp_reader = BufReader::new(self.tcp_stream.borrow());
+
+        if let Err(err) = H2::establish_h2_conn(&mut self.tcp_stream) {
             println!("Error: {}. Abort!", err);
             return;
         }
         println!("HTTP2 Connection Established!");
 
-        let encoder = Encoder::new();
+        let mut encoder = Encoder::new();
         let mut decoder = Decoder::new();
         loop {
-            let frame = H2::parse_frame(&mut tcp_reader);
+            let frame = H2::parse_frame(&mut self.tcp_stream);
             let frame = match frame {
                 Ok(v) => v,
                 Err(e) => {
@@ -58,7 +62,10 @@ impl H2 {
 
             let stream_id = frame.header.stream_identifier();
             if stream_id == H2::CONN_STREAM_ID {
-                println!("Not dealing with stream id 0 frames");
+                println!(
+                    "Not dealing with stream id 0 frames, got frame: {:#?}",
+                    frame
+                );
                 continue;
             }
 
@@ -71,7 +78,8 @@ impl H2 {
 
             if stream.should_handle_request() {
                 if let Some(req) = stream.curr_request() {
-                    req_handler(req);
+                    let resp = req_handler(req);
+                    stream.send(resp, &mut encoder, &mut self.tcp_stream);
                     stream.set_request_handled();
                 }
             }
@@ -80,9 +88,9 @@ impl H2 {
         }
     }
 
-    fn establish_h2_conn(reader: &mut impl Read) -> Result<(), String> {
+    fn establish_h2_conn(tcp_stream: &mut TcpStream) -> Result<(), String> {
         let mut preface_buf: [u8; 24] = Default::default();
-        let preface_bytes = reader.read(preface_buf.as_mut_slice()).unwrap();
+        let preface_bytes = tcp_stream.read(preface_buf.as_mut_slice()).unwrap();
 
         if preface_bytes != 24 {
             return Err(format!("Not an http2 connection, aborted!"));
@@ -97,6 +105,19 @@ impl H2 {
 
         if preface_str != H2::H2PREFACE {
             return Err(format!("Not a valid http2 preface. Aborted!"));
+        }
+
+        // Send server connection preface, that is an empty settings frame.
+        {
+            let fheader = h2::Header::from_fields(0, h2::FrameType::Settings, HeaderFlagMask(0), 0);
+            let fbody = Vec::new();
+
+            let frame = Frame::new(fheader, fbody);
+            let frame_buf = frame.serialize();
+
+            tcp_stream
+                .write(&frame_buf)
+                .expect("Failed to send server conn preface");
         }
 
         Ok(())

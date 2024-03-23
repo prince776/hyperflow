@@ -1,7 +1,7 @@
 use core::fmt;
 use std::fmt::{format, Display};
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Header {
     pub key: String,
     pub value: String,
@@ -122,4 +122,20 @@ pub struct Response {
     pub status: u16,
     pub headers: Headers,
     pub body: Vec<u8>,
+}
+
+impl Response {
+    pub fn h2headers(&self) -> Headers {
+        let mut h2headers = self.headers.to_vec();
+        h2headers.push(Header {
+            key: String::from(":status"),
+            value: self.status.to_string(),
+        });
+        h2headers.push(Header {
+            key: String::from("content-length"),
+            value: self.body.len().to_string(),
+        });
+
+        h2headers
+    }
 }

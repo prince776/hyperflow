@@ -1,8 +1,10 @@
+use std::io::Write;
+
 use hpack::{Decoder, Encoder};
 
 use crate::{
-    h2::{Frame, FrameType, Header, HeaderFlag},
-    http::{self, Request},
+    h2::{self, Frame, FrameType, Header, HeaderFlag, HeaderFlagMask},
+    http::{self, Request, Response},
 };
 
 pub struct StreamData {
@@ -84,6 +86,58 @@ impl Stream {
             _ => {
                 unimplemented!();
             }
+        }
+    }
+
+    pub fn send(&mut self, resp: Response, encoder: &mut Encoder, writer: &mut impl Write) {
+        println!("Sending http response: {:#?}", resp);
+        // Send Header Frame.
+        {
+            let h2headers = resp.h2headers();
+            let mut flag_mask = h2::HeaderFlagMask(0);
+            flag_mask.add(HeaderFlag::EndHeaders);
+
+            println!("H2 headers to send: {:#?}", h2headers);
+
+            let mut encodeable_headers: Vec<(&[u8], &[u8])> = Vec::new();
+            for header in &h2headers {
+                encodeable_headers.push((header.key.as_bytes(), header.value.as_bytes()));
+            }
+            let frame_body = encoder.encode(encodeable_headers);
+            let frame_header = h2::Header::from_fields(
+                frame_body.len() as u32,
+                FrameType::Headers,
+                flag_mask,
+                self.id(),
+            );
+
+            let frame = Frame::new(frame_header, frame_body);
+            let frame_buf = frame.serialize();
+
+            println!("Writing header frame: {:#?}", frame);
+            writer
+                .write(&frame_buf)
+                .expect("Failed to send header frame");
+        }
+
+        // Send data frames
+        {
+            let frame_body = resp.body;
+
+            let mut flag_mask = h2::HeaderFlagMask(0);
+            flag_mask.add(HeaderFlag::EndSream);
+            let frame_header = h2::Header::from_fields(
+                frame_body.len() as u32,
+                FrameType::Data,
+                flag_mask,
+                self.id(),
+            );
+
+            let frame = Frame::new(frame_header, frame_body);
+            let frame_buf = frame.serialize();
+            writer
+                .write(&frame_buf)
+                .expect("Failed to send header frame");
         }
     }
 

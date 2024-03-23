@@ -19,10 +19,12 @@ fn main() {
                 req.method,
                 req.body().len(),
             );
+
+            let body_str = String::from("<Html>Hello</Html>");
             return Response {
                 status: 200,
                 headers: Vec::new(),
-                body: Vec::new(),
+                body: Vec::from(body_str),
             };
         });
         println!("HTTP connection end");

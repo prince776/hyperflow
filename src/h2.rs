@@ -14,6 +14,33 @@ impl Frame {
     pub fn new(header: Header, body: Vec<u8>) -> Frame {
         Frame { header, body }
     }
+
+    pub fn serialize(&self) -> Vec<u8> {
+        let mut res = Vec::new();
+
+        let buf = self.header.length.to_be_bytes();
+        res.push(buf[1]);
+        res.push(buf[2]);
+        res.push(buf[3]);
+
+        let buf = self.header.frame_type.val().to_be_bytes();
+        res.push(buf[0]);
+
+        let buf = self.header.flag_mask.0.to_be_bytes();
+        res.push(buf[0]);
+
+        let buf = self.header.stream_identifier.to_be_bytes();
+        res.push(buf[0]);
+        res.push(buf[1]);
+        res.push(buf[2]);
+        res.push(buf[3]);
+
+        for b in self.body.iter() {
+            res.push(*b);
+        }
+
+        res
+    }
 }
 
 #[derive(Debug)]
@@ -22,6 +49,22 @@ pub struct Header {
     frame_type: FrameType,
     flag_mask: HeaderFlagMask,
     stream_identifier: u32,
+}
+
+impl Header {
+    pub fn from_fields(
+        length: u32,
+        frame_type: FrameType,
+        flag_mask: HeaderFlagMask,
+        stream_id: u32,
+    ) -> Header {
+        Header {
+            length,
+            frame_type,
+            flag_mask,
+            stream_identifier: stream_id,
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -54,6 +97,21 @@ impl FrameType {
             _ => Err("not a valid frame type"),
         }
     }
+
+    pub fn val<'a>(&self) -> u8 {
+        match self {
+            FrameType::Data => 0,
+            FrameType::Headers => 1,
+            FrameType::Priority => 2,
+            FrameType::RstStream => 3,
+            FrameType::Settings => 4,
+            FrameType::PushPromise => 5,
+            FrameType::Ping => 6,
+            FrameType::GoAway => 7,
+            FrameType::WindowUpdate => 8,
+            FrameType::Continuation => 9,
+        }
+    }
 }
 
 #[repr(u8)]
@@ -66,7 +124,7 @@ pub enum HeaderFlag {
 }
 
 #[derive(Clone, Debug)]
-pub struct HeaderFlagMask(u8);
+pub struct HeaderFlagMask(pub u8);
 
 impl HeaderFlagMask {
     pub fn check(&self, flag: HeaderFlag) -> bool {
@@ -74,14 +132,15 @@ impl HeaderFlagMask {
         return masked > 0;
     }
 
-    pub fn mask(&mut self, flag: HeaderFlag) {
+    pub fn add(&mut self, flag: HeaderFlag) {
         self.0 |= flag as u8;
     }
 
-    pub fn unmask(&mut self, flag: HeaderFlag) {
+    pub fn remove(&mut self, flag: HeaderFlag) {
         self.0 &= !(flag as u8);
     }
 }
+
 impl Header {
     pub fn new<'a>(buf: &[u8]) -> Result<Header, &'a str> {
         let length = u32::from_be_bytes([0x00, buf[0], buf[1], buf[2]]);
