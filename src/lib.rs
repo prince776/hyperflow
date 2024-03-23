@@ -12,7 +12,7 @@ use hpack::{Decoder, Encoder};
 use http::{Request, Response};
 use stream::{Stream, StreamData};
 
-use crate::h2::{Frame, Header};
+use crate::h2::{Frame, FrameType, Header};
 
 mod h2;
 pub mod http;
@@ -62,8 +62,12 @@ impl H2 {
 
             let stream_id = frame.header.stream_identifier();
             if stream_id == H2::CONN_STREAM_ID {
+                if let FrameType::GoAway = frame.header.frame_type() {
+                    println!("Received GOAWAY Frame. Terminating H2 conn");
+                    return;
+                }
                 println!(
-                    "Not dealing with stream id 0 frames, got frame: {:#?}",
+                    "Not dealing with stream id 0 frames other than GOAWAY, got frame: {:#?}",
                     frame
                 );
                 continue;
